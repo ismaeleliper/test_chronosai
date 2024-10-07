@@ -134,9 +134,10 @@ def webhook():
             return jsonify({"status": "error", "message": "Dados de telefone ou mensagem ausentes"}), 400
 
         print(f"Mensagem recebida de {phone_number}: {text}")
+        sender_name = data.get("senderName", "Prezado")
 
         # Responder automaticamente à mensagem recebida
-        message_assistant = assistant(message=text, phone=phone_number + "123", user="Prezado")
+        message_assistant = assistant(message=text, phone=phone_number + "123", user=sender_name)
 
         # Enviar resposta de volta ao remetente usando a API Z-API
         send_url = f"https://api.z-api.io/instances/{ZAPI_PHONE_ID}/token/{ZAPI_API_TOKEN}/send-text"
@@ -156,16 +157,3 @@ def webhook():
     else:
         return jsonify({"status": "error", "message": "Estrutura de dados recebida é inválida"}), 400
 
-
-@app.route("/webhook", methods=["GET"])
-def verify_webhook():
-    mode = request.args.get("hub.mode")
-    token = request.args.get("hub.verify_token")
-    challenge = request.args.get("hub.challenge")
-
-    # Verificar se o token e o modo são válidos
-    if mode == "subscribe" and token == WEBHOOK_VERIFY_TOKEN:
-        print("Webhook verified successfully!")
-        return challenge, 200
-    else:
-        return "Forbidden", 403
