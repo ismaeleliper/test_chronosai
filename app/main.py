@@ -6,8 +6,8 @@ from flask import request, jsonify, current_app as app
 from .models import Thread
 from app.app import db
 
-WEBHOOK_VERIFY_TOKEN = app.config['WEBHOOK_VERIFY_TOKEN']
-GRAPH_API_TOKEN = app.config['GRAPH_API_TOKEN']
+ZAPI_PHONE_ID = app.config['ZAPI_PHONE_ID']
+ZAPI_API_TOKEN = app.config['ZAPI_API_TOKEN']
 OPENAI_API_KEY = app.config['OPENAI_API_KEY']
 
 assistant_id = app.config['ASSISTANT_ID']
@@ -34,7 +34,6 @@ def get_address_by_cep(cep: str) -> str:
 
 
 def assistant(phone, message, user):
-
     thread_id = None
     default_message = "Desculpa, não consegui entender a última mensagem 😅. Você pode tentar de novo, por favor?"
 
@@ -65,20 +64,14 @@ def assistant(phone, message, user):
         instructions="Please address the user as " + user + "."
     )
 
-    # Monitorar o estado do processo com um máximo de 10 tentativas
     max_attempts = 10
     attempts = 0
     while attempts < max_attempts:
         time.sleep(5)
         attempts += 1
-        # Obtém o status do run
-        run_status = client.beta.threads.runs.retrieve(
-            thread_id=thread_id,
-            run_id=run.id
-        )
+        run_status = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
 
         content_array = []
-        # Se a execução estiver completa, recupera as mensagens
         if run_status.status == 'completed':
             messages = client.beta.threads.messages.list(thread_id=thread_id)
             for msg in messages.data:
@@ -92,18 +85,14 @@ def assistant(phone, message, user):
             
             return default_message
 
-        # Se precisar de ação, processa as chamadas de função
         elif run_status.status == 'requires_action':
             required_actions = run_status.required_action.submit_tool_outputs.model_dump()
             tool_outputs = []
 
             for action in required_actions["tool_calls"]:
                 func_name = action['function']['name']
-                
-                # Convertendo a string de argumentos para dicionário
                 arguments = json.loads(action['function']['arguments'])
 
-                # Identifica a função e executa a ação correspondente
                 if func_name == "get_address_by_cep":
                     cep = arguments.get('cep', '01001-000')
                     output = get_address_by_cep(cep)
@@ -114,89 +103,58 @@ def assistant(phone, message, user):
                 else:
                     return default_message
 
-            print("Submitting tool outputs to the Assistant...")
             client.beta.threads.runs.submit_tool_outputs(
                 thread_id=thread_id,
                 run_id=run.id,
                 tool_outputs=tool_outputs
             )
         else:
-            print("Waiting for the Assistant to process...")
             time.sleep(3)
 
     return default_message
 
 
-# Variável para armazenar IDs de mensagens processadas
-processed_message_ids = set()
-
-# Função para evitar duplicação de mensagens
-def is_message_processed(message_id):
-    if message_id in processed_message_ids:
-        return True
-    processed_message_ids.add(message_id)
-    return False
-
-
-# Função que processa a mensagem usando a API do WhatsApp e OpenAI
-def process_message(message, business_phone_number_id, contact_name):
-    reply_url = f"https://graph.facebook.com/v18.0/{business_phone_number_id}/messages"
-    headers = {
-        "Authorization": f"Bearer {GRAPH_API_TOKEN}",
-        "Content-Type": "application/json"
-    }
-
-    # Mensagem do usuário
-    user_input = message["text"]["body"]
-    message_assistant = assistant(message=user_input, phone=business_phone_number_id + "12", user=contact_name)
-
-    # Mensagem de resposta personalizada usando o nome do contato
-    response_message = message_assistant
-
-    data = {
-        "messaging_product": "whatsapp",
-        "to": message["from"],
-        "text": {"body": response_message},
-        "context": {
-            "message_id": message["id"]
-        }
-    }
-
-    # Enviar a resposta
-    response = requests.post(reply_url, headers=headers, json=data)
-    if response.status_code != 200:
-        print(f"Failed to send message: {response.status_code}, {response.text}")
-
-
 # Rota para processar o webhook de mensagens do WhatsApp
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    # Extração segura dos dados recebidos no webhook
-    entry = request.json.get('entry', [{}])[0]
-    changes = entry.get('changes', [{}])[0]
-    value = changes.get('value', {})
-    message = value.get('messages', [{}])[0]
+    data = request.get_json()
+    print("Dados recebidos no webhook:", data)
 
-    # Obter o nome do contato, se disponível
-    contacts = value.get('contacts', [{}])[0]
-    contact_name = contacts.get('profile', {}).get('name', 'Prezado')
+    # Verificar se a estrutura do payload está correta
+    if data and data.get("type") == "ReceivedCallback":
+        # Adicionar verificação para ignorar mensagens enviadas pelo próprio bot
+        if data.get("fromMe"):
+            print("Mensagem enviada pelo bot. Ignorando para evitar loop.")
+            return jsonify({"status": "ignored", "message": "Mensagem enviada pelo próprio bot. Ignorada."}), 200
 
-    # Verificar se a mensagem recebida é de texto e se já foi processada
-    if "id" in message:
-        message_id = message["id"]
-        if is_message_processed(message_id):
-            print(f"Mensagem {message_id} já processada. Ignorando.")
-            return jsonify({"status": "duplicated_message_ignored"}), 200
+        phone_number = data.get("phone")  # Número de telefone do remetente
+        text = data.get("text", {}).get("message", "")  # Conteúdo da mensagem enviada pelo usuário
+
+        if not phone_number or not text:
+            return jsonify({"status": "error", "message": "Dados de telefone ou mensagem ausentes"}), 400
+
+        print(f"Mensagem recebida de {phone_number}: {text}")
+
+        # Responder automaticamente à mensagem recebida
+        message_assistant = assistant(message=text, phone=phone_number + "123", user="Prezado")
+
+        # Enviar resposta de volta ao remetente usando a API Z-API
+        send_url = f"https://api.z-api.io/instances/{ZAPI_PHONE_ID}/token/{ZAPI_API_TOKEN}/send-text"
+        payload = {
+            "phone": phone_number,
+            "message": message_assistant
+        }
+
+        response = requests.post(send_url, json=payload)
+
+        if response.status_code == 200:
+            print("Mensagem de resposta enviada com sucesso.")
+            return jsonify({"status": "success", "message": "Mensagem recebida e respondida!"}), 200
+        else:
+            print("Falha ao enviar a mensagem de resposta:", response.text)
+            return jsonify({"status": "error", "message": response.text}), response.status_code
     else:
-        print("ID da mensagem não encontrado.")
-        return jsonify({"status": "error", "message": "Message ID not found"}), 400
-
-    # Verificar se a mensagem recebida é de texto
-    if message.get("type") == "text":
-        business_phone_number_id = value.get('metadata', {}).get('phone_number_id')
-        process_message(message, business_phone_number_id, contact_name)
-
-    return jsonify({"status": "success"}), 200
+        return jsonify({"status": "error", "message": "Estrutura de dados recebida é inválida"}), 400
 
 
 @app.route("/webhook", methods=["GET"])
