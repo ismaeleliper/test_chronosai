@@ -3,7 +3,7 @@
 run: `docker-compose up --build -d`
 
 ### Function Assistant Open ai
-{
+```{
   "name": "get_address_by_cep",
   "description": "Busca o endereço completo com base no CEP fornecido.",
   "strict": false,
@@ -19,4 +19,4 @@ run: `docker-compose up --build -d`
       "cep"
     ]
   }
-}
+}```
