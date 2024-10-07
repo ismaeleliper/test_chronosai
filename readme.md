@@ -21,9 +21,11 @@ This project requires an assistant function at OpenAI Playground
   }
 }
 ```
+Clone the project:
+
 And then set ID Assitant at .env you must add to your local dir
 
-Clone the project:
+
 
 $`docker-compose up --build -d`
 
