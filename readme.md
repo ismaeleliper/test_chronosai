@@ -1,9 +1,9 @@
 # Test Chat AI Assistant
+This project requires an assistant function at OpenAI Playground
 
-run: `docker-compose up --build -d`
-
-### Function Assistant Open ai
-```{
+### Function Assistant OpenAI
+```
+{
   "name": "get_address_by_cep",
   "description": "Busca o endereço completo com base no CEP fornecido.",
   "strict": false,
@@ -19,4 +19,11 @@ run: `docker-compose up --build -d`
       "cep"
     ]
   }
-}```
+}
+```
+And then set ID Assitant at .env you must add to your local dir
+
+Clone the project:
+
+$`docker-compose up --build -d`
+
