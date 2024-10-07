@@ -7,7 +7,7 @@ load_dotenv()
 class Config:
     SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    WEBHOOK_VERIFY_TOKEN=os.getenv('WEBHOOK_VERIFY_TOKEN')
-    GRAPH_API_TOKEN=os.getenv('GRAPH_API_TOKEN')
+    ZAPI_PHONE_ID=os.getenv('ZAPI_PHONE_ID')
+    ZAPI_API_TOKEN=os.getenv('ZAPI_API_TOKEN')
     OPENAI_API_KEY=os.getenv('OPENAI_API_KEY')
     ASSISTANT_ID=os.getenv('ASSISTANT_ID')
